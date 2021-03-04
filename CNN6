@@ -1,0 +1,250 @@
+import pandas as pd
+import numpy as np
+import matplotlib
+matplotlib.use('Agg')  # noqa
+import matplotlib.pyplot as plt
+from matplotlib.backends.backend_agg import FigureCanvasAgg as FigureCanvas
+from matplotlib.figure import Figure
+import tensorflow
+from tensorflow import keras
+from tensorflow.keras import backend as K
+from tensorflow.keras import regularizers
+from tensorflow.keras.models import Sequential, Model, model_from_json, load_model
+from tensorflow.keras.preprocessing.image import ImageDataGenerator
+from tensorflow.keras.layers import Dense, Flatten, Conv2D, BatchNormalization, Dropout, MaxPooling2D, Activation, GlobalAveragePooling2D
+from tensorflow.keras.optimizers import RMSprop, SGD, Adam, Nadam
+from tensorflow.keras import callbacks
+from tensorflow.keras.callbacks import ReduceLROnPlateau, ModelCheckpoint, Callback, EarlyStopping
+from tensorflow.keras.applications import densenet
+from tensorflow.keras.utils import to_categorical
+
+
+# In[16]:
+
+
+from keras.preprocessing.image import ImageDataGenerator 
+
+img_width, img_height = 256, 256
+
+train_data_dir = '/data/Complete/Train'
+validation_data_dir = '/data/Complete/Validation'
+test_data_dir = '/data/Complete/Test'
+
+
+# In[17]:
+
+
+character_names = {0: '0', 1: '1'}
+
+
+# In[18]:
+
+
+train_datagen = ImageDataGenerator( 
+    rescale=1. / 255, 
+    shear_range=0.2, 
+    zoom_range=0.2, 
+    horizontal_flip=True) 
+  
+test_datagen = ImageDataGenerator(rescale=1. / 255) 
+
+batch_size = 16 
+train_generator = train_datagen.flow_from_directory( 
+    train_data_dir, 
+    target_size=(img_width, img_height), 
+    batch_size=batch_size, 
+    shuffle=True,
+    class_mode='binary') 
+
+
+# In[19]:
+
+
+val_generator = train_datagen.flow_from_directory( 
+    validation_data_dir, 
+    target_size=(img_width, img_height), 
+    batch_size=batch_size, 
+    shuffle=True,
+    class_mode='binary')
+
+
+# In[20]:
+
+
+test_generator = train_datagen.flow_from_directory( 
+    test_data_dir, 
+    target_size=(img_width, img_height), 
+    batch_size=batch_size, 
+    shuffle=False,
+    class_mode='binary')
+
+
+# In[25]:
+
+
+import wandb
+from wandb.keras import WandbCallback
+
+
+# In[26]:
+
+
+sweep_config = {
+    'method': 'grid', #grid, random
+    'metric': {
+      'name': 'accuracy',
+      'goal': 'maximize'   
+    },
+    'parameters': {
+        'weight_decay': {
+            'values': [0.0005, 0.005]
+        },
+        'learning_rate': {
+            'values': [1e-3,1e-4]
+        },
+        'optimizer': {
+            'values': ['adam', 'nadam', 'sgd', 'rmsprop']
+        }
+    }
+}
+
+
+# In[27]:
+
+
+import matplotlib
+matplotlib.use('Agg')  # noqa
+import matplotlib.pyplot as plt
+from matplotlib.backends.backend_agg import FigureCanvasAgg as FigureCanvas
+from matplotlib.figure import Figure
+from tensorflow import keras
+import numpy as np
+import wandb
+
+def fig2data(fig):
+    """
+    @brief Convert a Matplotlib figure to a 4D numpy array with RGBA channels and return it
+    @param fig a matplotlib figure
+    @return a numpy 3D array of RGBA values
+    """
+    # draw the renderer
+    fig.canvas.draw()
+
+    # Get the RGBA buffer from the figure
+    w, h = fig.canvas.get_width_height()
+    buf = np.fromstring(fig.canvas.tostring_argb(), dtype=np.uint8)
+    buf.shape = (w, h, 4)
+
+    # canvas.tostring_argb give pixmap in ARGB mode. Roll the ALPHA channel to have it in RGBA mode
+    buf = np.roll(buf, 3, axis=2)
+    return buf
+
+
+def repeated_predictions(model, data, look_back, steps=100):
+    predictions = []
+    for i in range(steps):
+        input_data = data[np.newaxis, :, np.newaxis]
+        generated = model.predict(input_data)[0]
+        data = np.append(data, generated)[-look_back:]
+        predictions.append(generated)
+    return predictions
+
+
+class PlotCallback(keras.callbacks.Callback):
+    def __init__(self, trainX, trainY, testX, testY, look_back, repeated_predictions=False):
+        self.repeat_predictions = repeated_predictions
+        self.trainX = trainX
+        self.trainY = trainY
+        self.testX = testX
+        self.testY = testY
+        self.look_back = look_back
+
+    def on_epoch_end(self, epoch, logs):
+        if self.repeat_predictions:
+            preds = repeated_predictions(
+                self.model, self.trainX[-1, :, 0], self.look_back, self.testX.shape[0])
+        else:
+            preds = self.model.predict(self.testX)
+
+        # Generate a figure with matplotlib</font>
+        figure = matplotlib.pyplot.figure(figsize=(10, 10))
+        plot = figure.add_subplot(111)
+
+        plot.plot(self.trainY)
+        plot.plot(np.append(np.empty_like(self.trainY) * np.nan, self.testY))
+        plot.plot(np.append(np.empty_like(self.trainY) * np.nan, preds))
+
+        data = fig2data(figure)
+        matplotlib.pyplot.close(figure)
+
+        wandb.log({"image": wandb.Image(data)}, commit=False)
+
+
+# In[28]:
+
+
+def train():
+    # Default values for hyper-parameters we're going to sweep over
+    config_defaults = {
+        'epochs': 15,
+        'batch_size': 16,
+        'activation': 'relu',
+        'weight_decay': 0.0005,
+        'learning_rate': 1e-4,
+        'optimizer': 'nadam',
+        'seed': 42
+    }
+
+    # Initialize a new wandb run
+    wandb.init(config=config_defaults)
+    
+    # Config is a variable that holds and saves hyperparameters and inputs
+    config = wandb.config
+    config.repeated_predictions = False
+    config.look_back = 13
+
+    input_shape = (256, 256, 3)
+
+    # Define the model architecture - 
+    model = Sequential() 
+    model.add(Conv2D(32, (2, 2), input_shape=input_shape,kernel_regularizer=regularizers.l2(config.weight_decay)))
+    model.add(Activation('relu')) 
+    model.add(MaxPooling2D(pool_size=(2, 2))) 
+  
+    model.add(Conv2D(32, (2, 2),kernel_regularizer=regularizers.l2(config.weight_decay))) 
+    model.add(Activation('relu')) 
+    model.add(MaxPooling2D(pool_size=(2, 2))) 
+  
+    model.add(Conv2D(64, (2, 2),kernel_regularizer=regularizers.l2(config.weight_decay))) 
+    model.add(Activation('relu')) 
+    model.add(MaxPooling2D(pool_size=(2, 2))) 
+  
+    model.add(Flatten()) 
+    model.add(Dense(64)) 
+    model.add(Activation('relu')) 
+    model.add(Dropout(0.5)) 
+    model.add(Dense(1)) 
+    model.add(Activation('sigmoid')) 
+       
+    #wandb.watch(model)
+    if config.optimizer=='sgd':
+        optimizer = SGD(lr=config.learning_rate, decay=1e-5, momentum=0.9, nesterov=True)
+    elif config.optimizer=='nadam':
+        optimizer = Nadam(lr=config.learning_rate, beta_1=0.9, beta_2=0.999, clipnorm=1.0)
+    elif config.optimizer=='rmsprop':
+        optimizer = RMSprop(lr=config.learning_rate, decay=1e-5)
+    elif config.optimizer=='adam':
+        optimizer = Adam(lr=config.learning_rate, beta_1=0.9, beta_2=0.999, clipnorm=1.0)
+
+    model.compile(loss = "binary_crossentropy", optimizer = optimizer, metrics=['accuracy'])
+    
+    history = model.fit(train_generator,
+                        epochs=config.epochs,
+                        validation_data=val_generator,
+                        callbacks=[WandbCallback(data_type = "image", validation_data = val_generator, labels=character_names),
+                                   keras.callbacks.EarlyStopping(patience=10, restore_best_weights=True)])
+    
+    accuracy = history.history['accuracy']
+    #wandb.log(metrics)
+    #accuracy = model.evaluate(Xtrain, ytrain)
+    wandb.log({"accuracy": accuracy})
