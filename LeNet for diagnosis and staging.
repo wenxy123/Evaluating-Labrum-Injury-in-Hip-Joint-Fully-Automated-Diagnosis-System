@@ -35,18 +35,8 @@ from keras.layers.pooling import MaxPooling2D
 from keras.layers.merge import concatenate
 
 
-# In[400]:
-
-
-import pandas as pd
-import numpy as np
-
 data = pd.read_csv('/data/data.csv',encoding='gbk')
 data[:5]
-
-
-# In[85]:
-
 
 ID = []
 label = []
@@ -60,22 +50,12 @@ data = {
 }
 
 data_df = pd.DataFrame(data)
-data_df[:5]
-
-
-# In[86]:
 
 data_df = data_df[~data_df['label'].isin([3,888,999])]
-
-
-# In[87]:
-
 
 from collections import Counter
 Counter(data_df['label'])
 
-
-# In[88]:
 # Use OSAG for example.
 
 data_df1 = pd.read_csv('/data/expand_ID.csv')
@@ -91,16 +71,8 @@ Counter(data_df['label'])
 #data_df = pd.concat([data_df1,data_df2])
 #data_df[:5]
 
-
-# In[551]:
-
-
 data_df = data_df.sample(frac=1)
 data_df[:5]
-
-
-# In[552]:
-
 
 data_dir = '/data/crop_sag1/'
 
@@ -113,10 +85,6 @@ for i in range(len(data_df)):
         image_ID.append(j)
         image_label.append(str(list(data_df['label'])[i]))
 
-
-# In[553]:
-
-
 data = {
     'image_ID':image_ID,
     'image_label':image_label
@@ -125,28 +93,7 @@ data = {
 image_df = pd.DataFrame(data)
 image_df[:5]
 
-
-# In[554]:
-
-
-image_df = image_df.sample(frac=1)
-image_df[:5]
-
-
-# In[555]:
-
-
-len(image_df)
-
-
-# In[556]:
-
-
 image_list = list(image_df['image_ID'])
-
-
-# In[557]:
-
 
 from sklearn.model_selection import train_test_split
 
@@ -154,30 +101,14 @@ X_train, X_test = train_test_split(image_list, test_size=0.3, random_state=2021)
 
 Xtrain, Xval = train_test_split(X_train, test_size=0.2, random_state=2021)
 
-
-# In[558]:
-
-
 train_df = image_df[image_df['image_ID'].isin(Xtrain)]
 train_df[:5]
-
-
-# In[559]:
-
 
 validation_df = image_df[image_df['image_ID'].isin(Xval)]
 validation_df[:5]
 
-
-# In[560]:
-
-
 test_df = image_df[image_df['image_ID'].isin(X_test)]
 test_df[:5]
-
-
-# In[561]:
-
 
 from keras_preprocessing.image import ImageDataGenerator
 
@@ -193,22 +124,13 @@ train_generator=datagen.flow_from_dataframe(dataframe=train_df, directory=data_d
                                             shuffle=True,target_size=(48,48), batch_size=32)
 
 
-# In[562]:
-
-
 validation_generator=datagen.flow_from_dataframe(dataframe=validation_df, directory=data_dir,
                                             x_col="image_ID", y_col="image_label", 
                                             class_mode='categorical', 
                                             shuffle=True,target_size=(48,48), batch_size=32)
 
 
-# In[ ]:
-
-
 test_datagen = ImageDataGenerator(rescale=1. / 255) 
-
-
-# In[ ]:
 
 
 test_generator=datagen.flow_from_dataframe(dataframe=test_df, directory=data_dir,
@@ -217,15 +139,8 @@ test_generator=datagen.flow_from_dataframe(dataframe=test_df, directory=data_dir
                                             shuffle=False , target_size=(48,48), batch_size=32)
 
 
-# In[ ]:
-
-
 import wandb
 from wandb.keras import WandbCallback
-
-
-# In[83]:
-
 
 sweep_config = {
     'method': 'random', #grid, random
@@ -248,9 +163,6 @@ sweep_config = {
 
 character_names = {0: 'Normal', 1: 'Slightly',2:'Medium'}
 #character_names = {0: 'Normal', 1: 'Not normal'}
-
-# In[ ]:
-
 
 def train():
     # Default values for hyper-parameters we're going to sweep over
