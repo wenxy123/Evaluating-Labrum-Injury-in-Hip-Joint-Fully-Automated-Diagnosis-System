@@ -1,0 +1,1 @@
+# Evaluating-Labrum-Injury-in-Hip-Joint-Fully-Automated-Diagnosis-System
