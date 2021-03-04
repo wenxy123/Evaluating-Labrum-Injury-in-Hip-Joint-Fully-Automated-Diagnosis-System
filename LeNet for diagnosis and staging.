@@ -1,0 +1,319 @@
+import pandas as pd
+import numpy as np
+import cv2
+from matplotlib import pyplot
+import shutil
+import matplotlib
+matplotlib.use('Agg')  # noqa
+import matplotlib.pyplot as plt
+from matplotlib.backends.backend_agg import FigureCanvasAgg as FigureCanvas
+from matplotlib.figure import Figure
+from PIL import Image
+import tensorflow
+import keras
+from keras import backend as K
+from keras import regularizers
+from keras.models import Sequential, Model, model_from_json, load_model
+from keras.preprocessing.image import ImageDataGenerator
+from keras.utils import np_utils
+from keras.layers import Dense, Flatten, Conv2D, BatchNormalization, Dropout, MaxPooling2D, Activation, GlobalAveragePooling2D
+from keras.optimizers import RMSprop, SGD, Adam, Nadam
+from keras import callbacks
+from keras.callbacks import ReduceLROnPlateau, ModelCheckpoint, Callback, EarlyStopping
+from keras.applications import densenet
+from keras.utils import to_categorical
+from keras.losses import categorical_crossentropy
+import glob
+from tensorflow.keras import layers
+from sklearn.metrics import roc_curve,roc_auc_score
+from keras.models import Model
+from keras.layers import Input
+from keras.layers import Dense
+from keras.layers import Flatten
+from keras.layers.convolutional import Conv2D
+from keras.layers.pooling import MaxPooling2D
+from keras.layers.merge import concatenate
+
+
+# In[400]:
+
+
+import pandas as pd
+import numpy as np
+
+data = pd.read_csv('/data/data.csv',encoding='gbk')
+data[:5]
+
+
+# In[85]:
+
+
+ID = []
+label = []
+for i in range(len(data)):
+    ID.append(data['acc1'][i].split('A')[1])
+    label.append(data['Stage'][i])
+    
+data = {
+    'ID':ID,
+    'label':label
+}
+
+data_df = pd.DataFrame(data)
+data_df[:5]
+
+
+# In[86]:
+
+data_df = data_df[~data_df['label'].isin([3,888,999])]
+
+
+# In[87]:
+
+
+from collections import Counter
+Counter(data_df['label'])
+
+
+# In[88]:
+# Use OSAG for example.
+
+data_df1 = pd.read_csv('/data/expand_ID.csv')
+data_df1 = data_df1.sample(n=300)
+data_df2 = pd.read_csv('/data/expand_ID1.csv')
+data_df2 = data_df2.sample(n=300)
+data_df = pd.concat([data_df,data_df1,data_df2])
+Counter(data_df['label'])
+#data_df1 = pd.read_csv('/data/expand_ID.csv')
+#data_df = pd.concat([data_df,data_df1])
+#data_df1 = data_df[data_df['label']==0]
+#data_df2 = data_df[data_df['label']==1].sample(n=400)
+#data_df = pd.concat([data_df1,data_df2])
+#data_df[:5]
+
+
+# In[551]:
+
+
+data_df = data_df.sample(frac=1)
+data_df[:5]
+
+
+# In[552]:
+
+
+data_dir = '/data/crop_sag1/'
+
+image_ID = []
+image_label = []
+for i in range(len(data_df)):
+    path = data_dir + list(data_df['ID'])[i]
+    slices = glob.glob(path + '/*.jpg')[:10]
+    for j in slices:
+        image_ID.append(j)
+        image_label.append(str(list(data_df['label'])[i]))
+
+
+# In[553]:
+
+
+data = {
+    'image_ID':image_ID,
+    'image_label':image_label
+}
+
+image_df = pd.DataFrame(data)
+image_df[:5]
+
+
+# In[554]:
+
+
+image_df = image_df.sample(frac=1)
+image_df[:5]
+
+
+# In[555]:
+
+
+len(image_df)
+
+
+# In[556]:
+
+
+image_list = list(image_df['image_ID'])
+
+
+# In[557]:
+
+
+from sklearn.model_selection import train_test_split
+
+X_train, X_test = train_test_split(image_list, test_size=0.3, random_state=2021)
+
+Xtrain, Xval = train_test_split(X_train, test_size=0.2, random_state=2021)
+
+
+# In[558]:
+
+
+train_df = image_df[image_df['image_ID'].isin(Xtrain)]
+train_df[:5]
+
+
+# In[559]:
+
+
+validation_df = image_df[image_df['image_ID'].isin(Xval)]
+validation_df[:5]
+
+
+# In[560]:
+
+
+test_df = image_df[image_df['image_ID'].isin(X_test)]
+test_df[:5]
+
+
+# In[561]:
+
+
+from keras_preprocessing.image import ImageDataGenerator
+
+datagen=ImageDataGenerator(rescale=1. / 255, 
+    rotation_range=30,
+    shear_range=0.2, 
+    zoom_range=0.2, 
+    horizontal_flip=True)
+
+train_generator=datagen.flow_from_dataframe(dataframe=train_df, directory=data_dir,
+                                            x_col="image_ID", y_col="image_label", 
+                                            class_mode='categorical', 
+                                            shuffle=True,target_size=(48,48), batch_size=32)
+
+
+# In[562]:
+
+
+validation_generator=datagen.flow_from_dataframe(dataframe=validation_df, directory=data_dir,
+                                            x_col="image_ID", y_col="image_label", 
+                                            class_mode='categorical', 
+                                            shuffle=True,target_size=(48,48), batch_size=32)
+
+
+# In[ ]:
+
+
+test_datagen = ImageDataGenerator(rescale=1. / 255) 
+
+
+# In[ ]:
+
+
+test_generator=datagen.flow_from_dataframe(dataframe=test_df, directory=data_dir,
+                                            x_col="image_ID", y_col="image_label", 
+                                            class_mode=None, 
+                                            shuffle=False , target_size=(48,48), batch_size=32)
+
+
+# In[ ]:
+
+
+import wandb
+from wandb.keras import WandbCallback
+
+
+# In[83]:
+
+
+sweep_config = {
+    'method': 'random', #grid, random
+    'metric': {
+      'name': 'accuracy',
+      'goal': 'maximize'   
+    },
+    'parameters': {
+        'learning_rate': {
+            'values': [1e-3, 1e-4, 1e-5]
+        },
+        'weight_decay':{
+            'values':[0.05, 0.005, 0.0005]
+        },
+        'optimizer': {
+            'values': ['adam', 'nadam', 'sgd', 'rmsprop']
+        }
+    }
+}
+
+character_names = {0: 'Normal', 1: 'Slightly',2:'Medium'}
+#character_names = {0: 'Normal', 1: 'Not normal'}
+
+# In[ ]:
+
+
+def train():
+    # Default values for hyper-parameters we're going to sweep over
+    config_defaults = {
+        'epochs': 20,
+        'batch_size': 32,
+        'activation': 'relu',
+        'weight_decay': 0.0005,
+        'learning_rate': 1e-4,
+        'optimizer': 'nadam',
+        'seed': 42
+    }
+
+    # Initialize a new wandb run
+    wandb.init(config=config_defaults)
+    
+    # Config is a variable that holds and saves hyperparameters and inputs
+    config = wandb.config
+    config.repeated_predictions = False
+    config.look_back = 13
+
+    input_shape = (48, 48, 3)
+
+    # Define the model architecture - 
+    #top_model_weights_path = '/data/sag_multi_model_best2.h5'
+    
+    model = Sequential()
+    model.add(Conv2D(filters=6, kernel_size=(5,5), kernel_regularizer=regularizers.l2(config.weight_decay), padding='same', activation='relu', input_shape=(48, 48, 3)))
+    model.add(MaxPool2D(strides=2))
+    model.add(Conv2D(filters=16, kernel_size=(5,5), kernel_regularizer=regularizers.l2(config.weight_decay), padding='valid', activation='relu'))
+    model.add(MaxPool2D(strides=2))
+    model.add(Flatten())
+    model.add(Dense(256, activation='relu'))
+    model.add(Dense(84, activation='relu'))
+    model.add(Dense(3, activation='softmax'))
+    #model.add(Dense(1, activation='sigmoid'))
+    
+    #model.load_weights(top_model_weights_path)
+       
+    #wandb.watch(model)
+    if config.optimizer=='sgd':
+        optimizer = SGD(lr=config.learning_rate, decay=1e-5, momentum=0.9, nesterov=True)
+    elif config.optimizer=='nadam':
+        optimizer = Nadam(lr=config.learning_rate, beta_1=0.9, beta_2=0.999, clipnorm=1.0)
+    elif config.optimizer=='rmsprop':
+        optimizer = RMSprop(lr=config.learning_rate, decay=1e-5)
+    elif config.optimizer=='adam':
+        optimizer = Adam(lr=config.learning_rate, beta_1=0.9, beta_2=0.999, clipnorm=1.0)
+
+    model.compile(loss = categorical_crossentropy, optimizer = optimizer, metrics=['accuracy'])
+    #model.compile(loss = "binary_crossentropy", optimizer = optimizer, metrics=['accuracy'])
+    
+    history = model.fit(train_generator,
+                        epochs=150,
+                        validation_data=validation_generator,
+                        callbacks=[WandbCallback(data_type = "image", validation_data = validation_generator, labels=character_names),
+                                   keras.callbacks.EarlyStopping(monitor='val_accuracy',patience=50, restore_best_weights=True)])
+    
+    #prediction = model.predict_generator(test_generator)
+    #auc_score = roc_auc_score(test_generator.classes, predictions)    
+    
+    accuracy = history.history['accuracy']
+    #wandb.log(metrics)
+    #accuracy = model.evaluate(Xtrain, ytrain)
+    wandb.log({"accuracy": accuracy})
+    #wandb.log({'auc':auc_score})
