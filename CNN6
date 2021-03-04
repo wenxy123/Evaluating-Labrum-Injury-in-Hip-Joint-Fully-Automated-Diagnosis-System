@@ -17,12 +17,9 @@ from tensorflow.keras import callbacks
 from tensorflow.keras.callbacks import ReduceLROnPlateau, ModelCheckpoint, Callback, EarlyStopping
 from tensorflow.keras.applications import densenet
 from tensorflow.keras.utils import to_categorical
-
-
-# In[16]:
-
-
 from keras.preprocessing.image import ImageDataGenerator 
+
+
 
 img_width, img_height = 256, 256
 
@@ -31,13 +28,7 @@ validation_data_dir = '/data/Complete/Validation'
 test_data_dir = '/data/Complete/Test'
 
 
-# In[17]:
-
-
 character_names = {0: '0', 1: '1'}
-
-
-# In[18]:
 
 
 train_datagen = ImageDataGenerator( 
@@ -57,18 +48,12 @@ train_generator = train_datagen.flow_from_directory(
     class_mode='binary') 
 
 
-# In[19]:
-
-
 val_generator = train_datagen.flow_from_directory( 
     validation_data_dir, 
     target_size=(img_width, img_height), 
     batch_size=batch_size, 
     shuffle=True,
     class_mode='binary')
-
-
-# In[20]:
 
 
 test_generator = train_datagen.flow_from_directory( 
@@ -78,15 +63,8 @@ test_generator = train_datagen.flow_from_directory(
     shuffle=False,
     class_mode='binary')
 
-
-# In[25]:
-
-
 import wandb
 from wandb.keras import WandbCallback
-
-
-# In[26]:
 
 
 sweep_config = {
@@ -108,8 +86,6 @@ sweep_config = {
     }
 }
 
-
-# In[27]:
 
 
 import matplotlib
@@ -178,9 +154,6 @@ class PlotCallback(keras.callbacks.Callback):
         matplotlib.pyplot.close(figure)
 
         wandb.log({"image": wandb.Image(data)}, commit=False)
-
-
-# In[28]:
 
 
 def train():
