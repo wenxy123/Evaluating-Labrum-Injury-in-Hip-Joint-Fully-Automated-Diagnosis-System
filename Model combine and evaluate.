@@ -1,0 +1,366 @@
+import numpy as np
+import cv2
+from matplotlib import pyplot
+import shutil
+import matplotlib
+matplotlib.use('Agg')  # noqa
+import matplotlib.pyplot as plt
+from matplotlib.backends.backend_agg import FigureCanvasAgg as FigureCanvas
+from matplotlib.figure import Figure
+from PIL import Image
+import tensorflow
+import keras
+from tensorflow.keras import backend as K
+from tensorflow.keras import regularizers
+from tensorflow.keras.models import Sequential, Model, model_from_json, load_model
+from tensorflow.keras.preprocessing.image import ImageDataGenerator
+#from tensorflow.keras.utils import np_utils
+from tensorflow.keras.layers import Dense, Flatten, Conv2D, BatchNormalization, Dropout, MaxPooling2D, Activation, GlobalAveragePooling2D
+from tensorflow.keras.optimizers import RMSprop, SGD, Adam, Nadam
+from tensorflow.keras import callbacks
+from tensorflow.keras.callbacks import ReduceLROnPlateau, ModelCheckpoint, Callback, EarlyStopping
+from tensorflow.keras.applications import densenet
+from tensorflow.keras.utils import to_categorical
+from tensorflow.keras.losses import categorical_crossentropy
+import glob
+from tensorflow.keras import layers
+from tensorflow.keras.models import Model
+from tensorflow.keras.layers import Input
+from tensorflow.keras.layers import Dense
+from tensorflow.keras.layers import Flatten
+
+#from tensorflow.keras.layers.pooling import MaxPooling2D
+#from tensorflow.keras.layers.merge import concatenate
+from tensorflow.keras.models import Sequential, Model, model_from_json, load_model
+from tensorflow.keras.layers import Dense, Conv2D, MaxPool2D , Flatten
+
+from sklearn.datasets import make_classification
+from sklearn.metrics import plot_confusion_matrix
+from sklearn.metrics import confusion_matrix
+from sklearn.metrics import classification_report
+
+
+
+
+data = pd.read_csv('/data/data.csv',encoding='gbk')
+data[:5]
+
+ID = []
+label = []
+for i in range(len(data)):
+    ID.append(data['acc1'][i].split('A')[1])
+    label.append(data['Stage'][i])
+    
+data = {
+    'ID':ID,
+    'label':label
+}
+
+data_df = pd.DataFrame(data)
+data_df[:5]
+
+data_df = data_df[~data_df['label'].isin([3,888,999])]
+#data_df['label'] = data_df['label'].replace(2,1)
+#data_df['label'] = data_df['label'].replace(3,1)
+#data_df['label'] = data_df['label'].replace(888,1)
+#data_df['label'] = data_df['label'].replace(999,1)
+
+from collections import Counter
+
+data_df1 = pd.read_csv('/data/cor_expand_ID.csv')
+data_df1 = data_df1.sample(n=300)
+data_df2 = pd.read_csv('/data/cor_expand_ID1.csv')
+data_df2 = data_df2.sample(n=300)
+#data_df = pd.concat([data_df,data_df1])
+#data_df1 = data_df[data_df['label']==0]
+#data_df2 = data_df[data_df['label']==1]
+#data_df3 = data_df[data_df['label']==2]
+data_df = pd.concat([data_df,data_df1,data_df2])
+Counter(data_df['label'])
+
+from sklearn.model_selection import train_test_split
+
+data_df_train, data_df_test = train_test_split(data_df, test_size=0.3, random_state=2021)
+data_df_test[:5]
+
+import glob
+
+data_dir = '/data/crop_cor1/'
+
+image_ID = []
+image_label = []
+for i in range(len(data_df_test)):
+    path = data_dir + list(data_df_test['ID'])[i]
+    slices = glob.glob(path + '/*.jpg')
+    for j in slices:
+        image_ID.append(j)
+        image_label.append(str(list(data_df_test['label'])[i]))
+
+data = {
+    'image_ID':image_ID,
+    'image_label':image_label
+}
+
+image_df_cor = pd.DataFrame(data)
+
+data_dir = '/data/crop_sag1/'
+
+image_ID = []
+image_label = []
+for i in range(len(data_df_test)):
+    path = data_dir + list(data_df_test['ID'])[i]
+    slices = glob.glob(path + '/*.jpg')[:10]
+    for j in slices:
+        image_ID.append(j)
+        image_label.append(str(list(data_df_test['label'])[i]))
+
+data = {
+    'image_ID':image_ID,
+    'image_label':image_label
+}
+
+image_df_sag = pd.DataFrame(data)
+image_df_sag[:5]
+
+test_datagen=ImageDataGenerator(rescale=1./255)
+
+test_generator1=test_datagen.flow_from_dataframe(dataframe=image_df_cor, directory=data_dir,
+                                           shuffle=False,
+                                            x_col="image_ID", y_col="image_label", 
+                                            class_mode="categorical", target_size=(48,48), batch_size=32)
+
+test_generator2 = test_datagen.flow_from_dataframe(dataframe=image_df_sag, directory=data_dir,
+                                           shuffle=False,
+                                            x_col="image_ID", y_col="image_label", 
+                                            class_mode="categorical", target_size=(48,48), batch_size=32)
+
+#load the pre-trained model.
+
+top_model_weights_path = '/data/sag_multi_model_best.h5'
+
+model = Sequential()
+model.add(Conv2D(filters=6, kernel_size=(5,5), kernel_regularizer=regularizers.l2(0.0005),padding='same', activation='relu', input_shape=(48, 48, 3)))
+model.add(MaxPool2D(strides=2))
+model.add(Conv2D(filters=16, kernel_size=(5,5), kernel_regularizer=regularizers.l2(0.0005),padding='valid', activation='relu'))
+model.add(MaxPool2D(strides=2))
+model.add(Flatten())
+model.add(Dense(256, activation='relu'))
+model.add(Dense(84, activation='relu'))
+model.add(Dense(3, activation='softmax'))
+
+model.load_weights(top_model_weights_path)
+
+adam = Adam(lr=1e-3, beta_1=0.9, beta_2=0.999, clipnorm=1.0)
+model.compile(loss='categorical_crossentropy', metrics=['accuracy'], optimizer=adam)
+
+
+top_model_weights_path1 = '/data/cor_multi_model_best.h5'
+
+model1 = Sequential()
+model1.add(Conv2D(filters=6, kernel_size=(5,5), kernel_regularizer=regularizers.l2(0.0005),padding='same', activation='relu', input_shape=(48, 48, 3)))
+model1.add(MaxPool2D(strides=2))
+model1.add(Conv2D(filters=16, kernel_size=(5,5), kernel_regularizer=regularizers.l2(0.0005),padding='valid', activation='relu'))
+model1.add(MaxPool2D(strides=2))
+model1.add(Flatten())
+model1.add(Dense(256, activation='relu'))
+model1.add(Dense(84, activation='relu'))
+model1.add(Dense(3, activation='softmax'))
+
+model1.load_weights(top_model_weights_path1)
+
+nadam =  Nadam(lr=0.001, beta_1=0.9, beta_2=0.999, clipnorm=1.0)
+model1.compile(loss='categorical_crossentropy', metrics=['accuracy'], optimizer=nadam)
+
+#prediction
+predictions_sag = model.predict_generator(test_generator2)
+predictions_cor = model1.predict_generator(test_generator1)
+
+pred_sag = []
+for i in  range(len(predictions_sag)):
+    pred_sag.append(predictions_sag[i].argmax()) 
+
+pred_cor=[]
+for i in  range(len(predictions_cor)):
+    pred_cor.append(predictions_cor[i].argmax()) 
+
+#Combine the results.
+image_df_cor['pred'] = pred_cor
+image_df_sag['pred'] = pred_sag
+
+#Extract the patient code of the picture path in the dataframe for later merging.
+
+new_ID = []
+for i in range(len(image_df_cor['image_ID'])):
+    name = list(image_df_cor['image_ID'])[i].split('/')[3]
+    new_ID.append(name)                                           
+image_df_cor['new_ID'] = new_ID
+
+new_ID = []
+for i in range(len(image_df_sag['image_ID'])):
+    name = list(image_df_sag['image_ID'])[i].split('/')[3]
+    new_ID.append(name)                                           
+image_df_sag['new_ID'] = new_ID
+image_df_sag['image_label'] = image_df_sag['image_label'].astype('int')
+image_df_sag['pred'] = image_df_sag['pred'].astype('int')
+
+
+image_df_cor['image_label'] = image_df_cor['image_label'].astype('int')
+image_df_cor['pred'] = image_df_cor['pred'].astype('int')
+
+#The weighted method and the maximum value method are used to combine the prediction results of a sequence of pictures into the final prediction result of a patient.
+
+ID_list = list(set(list(image_df_cor['new_ID'])))
+real_label = []
+pred_label = []
+for i in ID_list:
+    select_df = image_df_cor[image_df_cor['new_ID']==i]
+    real = max(select_df['image_label'])
+    real_label.append(real)
+    #pred = max(select_df['pred']) ##maximum value combine method
+    pred = Counter(select_df['pred']).most_common(1)[0][0] ##weighted combine method
+    pred_label.append(pred)
+
+
+data = {
+    'patient_ID':ID_list,
+    'real_label':real_label,
+    'pred_cor':pred_label
+}
+final_df_cor = pd.DataFrame(data)
+
+
+ID_list = list(set(list(image_df_sag['new_ID'])))
+real_label1 = []
+pred_label1 = []
+for i in ID_list:
+    select_df = image_df_sag[image_df_sag['new_ID']==i]
+    real = max(select_df['image_label'])
+    real_label1.append(real)
+    #pred = max(select_df['pred'])
+    pred = Counter(select_df['pred']).most_common(1)[0][0]
+    pred_label1.append(pred)
+    
+data = {
+    'patient_ID':ID_list,
+    'real_label':real_label1,
+    'pred_cor':pred_label1
+}
+final_df_sag = pd.DataFrame(data)
+
+final_df = final_df_cor.merge(final_df_sag,on='patient_ID',how='inner')
+
+#For the two perspectives of SAG and COR, the higher level is selected as the combined prediction result.
+
+final_pred = []
+for i in range(len(final_df)):
+    if list(final_df['pred_cor_x'])[i] >= list(final_df['pred_cor_y'])[i]:
+        final_pred.append(list(final_df['pred_cor_x'])[i])
+    else:
+        final_pred.append(list(final_df['pred_cor_y'])[i])
+        
+final_df['final_pred'] = final_pred
+
+#Calculate confusion matrix
+
+cnf_matrix = confusion_matrix(list(final_df['real_label_x']), list(final_df['final_pred']),labels=[0, 1,2])
+cnf_matrix
+
+#classification report and other evaluators.
+
+print(classification_report(list(final_df['real_label_x']), list(final_df['final_pred'])))
+
+FP = cnf_matrix.sum(axis=0) - np.diag(cnf_matrix) 
+FN = cnf_matrix.sum(axis=1) - np.diag(cnf_matrix)
+TP = np.diag(cnf_matrix)
+TN = cnf_matrix.sum() - (FP + FN + TP)
+FP = FP.astype(float)
+FN = FN.astype(float)
+TP = TP.astype(float)
+TN = TN.astype(float)
+# Sensitivity, hit rate, recall, or true positive rate
+TPR = TP/(TP+FN)
+# Specificity or true negative rate
+TNR = TN/(TN+FP) 
+# Precision or positive predictive value
+PPV = TP/(TP+FP)
+# Negative predictive value
+NPV = TN/(TN+FN)
+# Fall out or false positive rate
+FPR = FP/(FP+TN)
+# False negative rate
+FNR = FN/(TP+FN)
+# False discovery rate
+FDR = FP/(TP+FP)
+# Overall accuracy for each class
+ACC = (TP+TN)/(TP+FP+FN+TN)
+print(classification_report(list(final_df['real_label_x']), list(final_df['final_pred'])))
+
+#Plot ROC curves.
+
+from sklearn.metrics import roc_curve, auc
+from sklearn.model_selection import train_test_split
+from sklearn.preprocessing import label_binarize
+from sklearn.multiclass import OneVsRestClassifier
+from scipy import interp
+from sklearn.metrics import roc_auc_score
+
+y = label_binarize(test_generator2.classes, classes=[0, 1, 2])
+n_classes = y.shape[1]
+
+# Compute ROC curve and ROC area for each class
+fpr = dict()
+tpr = dict()
+roc_auc = dict()
+for i in range(n_classes):
+    fpr[i], tpr[i], _ = roc_curve(y[:, i], predictions_sag[:, i])
+    roc_auc[i] = auc(fpr[i], tpr[i])
+
+# Compute micro-average ROC curve and ROC area
+fpr["micro"], tpr["micro"], _ = roc_curve(y.ravel(), predictions_sag.ravel())
+roc_auc["micro"] = auc(fpr["micro"], tpr["micro"])
+
+import matplotlib.pyplot as plt
+from itertools import cycle
+
+all_fpr = np.unique(np.concatenate([fpr[i] for i in range(n_classes)]))
+
+# Then interpolate all ROC curves at this points
+mean_tpr = np.zeros_like(all_fpr)
+for i in range(n_classes):
+    mean_tpr += interp(all_fpr, fpr[i], tpr[i])
+
+# Finally average it and compute AUC
+mean_tpr /= n_classes
+
+fpr["macro"] = all_fpr
+tpr["macro"] = mean_tpr
+roc_auc["macro"] = auc(fpr["macro"], tpr["macro"])
+
+# Plot all ROC curves
+plt.figure()
+plt.plot(fpr["micro"], tpr["micro"],
+         label='micro-average ROC curve (area = {0:0.2f})'
+               ''.format(roc_auc["micro"]),
+         color='deeppink', linestyle=':', linewidth=2)
+
+plt.plot(fpr["macro"], tpr["macro"],
+         label='macro-average ROC curve (area = {0:0.2f})'
+               ''.format(roc_auc["macro"]),
+         color='navy', linestyle=':', linewidth=2)
+
+colors = cycle(['orange',  'darkblue','darkorange'])
+for i, color in zip(range(n_classes), colors):
+    plt.plot(fpr[i], tpr[i], color=color, lw=2,
+             label='ROC curve of class {0} (area = {1:0.2f})'
+             ''.format(i, roc_auc[i]))
+
+plt.plot([0, 1], [0, 1], 'k--', lw=2)
+plt.xlim([0.0, 1.0])
+plt.ylim([0.0, 1.05])
+plt.xlabel('False Positive Rate')
+plt.ylabel('True Positive Rate')
+plt.title('OSAG_LeNet_multi_ROC')
+plt.legend(loc="lower right")
+plt.savefig('SAG_lent_multi.png')
+plt.show()
+
