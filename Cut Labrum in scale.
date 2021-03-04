@@ -1,0 +1,110 @@
+import tensorflow as tf
+
+print(tf.__version__)
+
+
+# In[9]:
+
+
+import keras
+print(keras.__version__)
+
+
+# In[ ]:
+
+
+from os import listdir
+from xml.etree import ElementTree
+from numpy import zeros
+from numpy import asarray
+from mrcnn.utils import Dataset
+from mrcnn.config import Config
+from mrcnn.model import MaskRCNN
+from mrcnn.model import log
+import re
+import time
+from mrcnn.model import data_generator
+import datetime
+
+
+# In[11]:
+
+
+import os
+import scipy.io
+import scipy.misc
+import numpy as np
+import pandas as pd
+import PIL
+import struct
+import cv2
+from numpy import expand_dims
+import tensorflow as tf
+from skimage.transform import resize
+import keras
+from keras import backend as K
+from keras.layers import Input, Lambda, Conv2D, BatchNormalization, LeakyReLU, ZeroPadding2D, UpSampling2D
+from keras.models import load_model, Model
+from keras.layers.merge import add, concatenate
+from keras.preprocessing.image import load_img
+from keras.preprocessing.image import img_to_array
+from matplotlib import pyplot
+import matplotlib.pyplot as plt
+from matplotlib.pyplot import imshow
+from matplotlib.patches import Rectangle
+
+
+# In[12]:
+
+
+class PredictionConfig(Config):
+    # define the name of the configuration
+    NAME = "Labrum_cfg"
+    # number of classes (background + Labrum)
+    NUM_CLASSES = 1 + 1
+    IMAGES_PER_GPU = 1
+
+
+# In[13]:
+
+
+cfg = PredictionConfig()
+# define the model
+model = MaskRCNN(mode='inference', model_dir='./', config=cfg)
+
+
+# In[14]:
+
+
+# load model weights
+model.load_weights('/data/Labrum/mask_rcnn_COR_object_detection1.h5', by_name=True)
+
+
+# In[28]:
+
+
+import glob
+
+image_df = glob.glob('/data/COR_1/*.jpg')
+image_df[:5]
+
+
+# In[36]:
+
+
+import os
+
+for i in image_df:
+    img = load_img(i)
+    img1 = img_to_array(img)
+    result= model.detect([img1])
+    yhat = result[0]
+    for box in yhat['rois']:
+        y1, x1, y2, x2 = box
+        im1 = img.crop((x1, y1, x2, y2)) 
+    new_path = '/data/crop_cor1'
+    a = i.split('/')
+    b = a[-1].split('_')
+    plot_filepath = os.path.join(new_path, b[0],b[1])
+    im1.save(plot_filepath)
+    print(b[0])
