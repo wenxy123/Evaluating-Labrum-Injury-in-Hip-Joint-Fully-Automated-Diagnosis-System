@@ -1,16 +1,9 @@
 import tensorflow as tf
-
 print(tf.__version__)
-
-
-# In[9]:
 
 
 import keras
 print(keras.__version__)
-
-
-# In[ ]:
 
 
 from os import listdir
@@ -27,36 +20,6 @@ from mrcnn.model import data_generator
 import datetime
 
 
-# In[11]:
-
-
-import os
-import scipy.io
-import scipy.misc
-import numpy as np
-import pandas as pd
-import PIL
-import struct
-import cv2
-from numpy import expand_dims
-import tensorflow as tf
-from skimage.transform import resize
-import keras
-from keras import backend as K
-from keras.layers import Input, Lambda, Conv2D, BatchNormalization, LeakyReLU, ZeroPadding2D, UpSampling2D
-from keras.models import load_model, Model
-from keras.layers.merge import add, concatenate
-from keras.preprocessing.image import load_img
-from keras.preprocessing.image import img_to_array
-from matplotlib import pyplot
-import matplotlib.pyplot as plt
-from matplotlib.pyplot import imshow
-from matplotlib.patches import Rectangle
-
-
-# In[12]:
-
-
 class PredictionConfig(Config):
     # define the name of the configuration
     NAME = "Labrum_cfg"
@@ -65,32 +28,17 @@ class PredictionConfig(Config):
     IMAGES_PER_GPU = 1
 
 
-# In[13]:
-
-
 cfg = PredictionConfig()
 # define the model
 model = MaskRCNN(mode='inference', model_dir='./', config=cfg)
 
-
-# In[14]:
-
-
 # load model weights
 model.load_weights('/data/Labrum/mask_rcnn_COR_object_detection1.h5', by_name=True)
-
-
-# In[28]:
-
 
 import glob
 
 image_df = glob.glob('/data/COR_1/*.jpg')
 image_df[:5]
-
-
-# In[36]:
-
 
 import os
 
